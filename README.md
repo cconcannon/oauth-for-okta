@@ -2,55 +2,41 @@
 
 ## Intro
 
-Okta encourages our users to *avoid* using tenant-level API keys to interact with the Okta API. All keys issued at the tenant level expire after 30 days.
+Okta encourages using [OAuth for Okta](https://developer.okta.com/docs/guides/implement-oauth-for-okta-serviceapp/main/) when building services that will interact with the Okta API. 
 
-Okta offers a better way - OAuth for Okta. Applications can be created with the ability to grant scoped access to the Okta API via the *access token* issued via OAuth2. The way this works is that the `scope` param in an authorization request includes the desired Okta API scopes (such as `okta.groups.manage` or `okta.users.manage`). If *both* the *application* and the *user* are authorized for the requested scope, then the access token is issued and can be used to interact with the Okta API.
+### Benefits of OAuth for Okta
+
+- bring-your-own PKI infrastructure (or use Okta's)
+- application context is captured in syslogs
+- scope management at the application level
+
+OAuth for Okta works by using the `scope` param in an authorization request. The param must include the desired Okta API scopes (such as `okta.groups.manage` or `okta.users.manage`). If the application is authorized for the requested scope(s), then an access token is issued via the *client credentials* grant. The token can then be used to interact with the Okta API.
 
 ## Demo
 
-This demo shows how to configure an app in Okta that is a designated Okta API user. The app will not authenticate within the context of an Okta identity, but rather will authenticate against the Okta OAuth2 server as a client using a *client credentials* grant.
+This demo shows how to configure an API-only application for use with the Okta API (machine-to-machine, no user context).
 
-Okta allows an app to be created as an *API Services* application. Okta requires that the clients of this app authenticate with a *Public key / Private key* mechanism - this allows organizations to maintain their own keys that can grant access to the Okta API.
+Okta allows an app to be created as an *API Services* application. Okta requires that the clients of this app authenticate with a *Public key / Private key* mechanism. If desired, organizations can maintain their own PKI infrastructure, and Okta will fetch and cache the public keys. Okta can also issue and manage keys.
 
-## Prerequisites
+**Note: Okta issues keys in `.json` format. If your app library requires a `.pem` format to sign requests (such as the Okta Golang SDK used here), then you can use a tool such as [pem-jwk](https://github.com/dannycoates/pem-jwk) to perform the conversions. Do not use external libraries for production keys without first performing a thorough audit of the library.**
 
-- **the relevant EA feature flag must be enabled (as of March 31, 2022)**
-- Go must be installed on your local machine
+## Prerequisites to run this demo
 
-## Configure an API Services App
+- **the relevant EA feature flag must be enabled for your Okta tenant (as of March 31, 2022)**
+- [Go v1.17+](https://go.dev/doc/install) must be installed on your local machine
+
+## Configure an API Services App in the Okta Admin Console
 
 1. configure an API Services application in Okta
 2. configure scopes for access by the app
-3. configure a JWK in Okta or elsewhere
-4. if required for the library implementation, convert the JWK to `.pem` format (for testing purposes I used [https://www.npmjs.com/package/pem-jwk])
+3. configure public/private keys in Okta (in the app settings) or BYO
+4. copy the private key, clientId, and org url for use in the next steps
 
-**[More details can be found in Okta's developer documentation](https://developer.okta.com/docs/guides/implement-oauth-for-okta-serviceapp/main/#create-and-sign-the-jwt)**
+## Configure and Run the App
 
-## Run this Example
+1. convert the private key to a file named `private.pem` [according to the certificate spec](https://www.rfc-editor.org/rfc/rfc1422) (for testing purposes I used [https://github.com/dannycoates/pem-jwk])
+2. create a `secrets` folder in the project root directory and copy `private.pem` to this folder
+3. copy `example.env` to `.env` and add your org/app details
+4. `go run main.go`
 
-1. `git clone https://github.com/cconcannon/oauth-for-okta && cd oauth-for-okta`
-2. copy `example.env` to `.env` and fill the details
-3. `go run main.go`
-
-## Brainstorming
-
-Use Cases: replace tenant API key usage
-
-### Assumptions
-
-- a service actor will need to perform things such as group membership audits and remediation
-
-### Scope
-
-- a service actor will be able to list and update Okta group membership
-- the Okta syslog should show granular usage of this service tool, including application context
-
-### Infrastructure
-
-- web app to show client credentials authentication, JWT access_token, then using that JWT access_token to:
-1. list group membership for a particular group
-2. add a group member
-3. remove a group member 
-
-- show sad-path as well...
-1. anything outside of group membership operations should be denied
+**More details can be found in [OAuth for Okta guide](https://developer.okta.com/docs/guides/implement-oauth-for-okta-serviceapp/main/) and in the [Okta Go SDK documentation](https://github.com/okta/okta-sdk-golang/).**

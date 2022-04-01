@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,52 +28,71 @@ func main() {
 		okta.WithAuthorizationMode("PrivateKey"),
 		okta.WithClientId(os.Getenv("CLIENT_ID")),
 		okta.WithScopes(([]string{"okta.groups.manage"})),
-		okta.WithPrivateKey("./secrets/key_private.pem"),
+		okta.WithPrivateKey("./secrets/private.pem"),
+		okta.WithCache(false),
 	)
 
 	if err != nil {
 		handleError(err)
 	}
 
-	actionSelector("What would you like to do?", ctx, client)
+	actionSelector("\n\n\n\n\n\n\n\n\n\n\n******** MAIN MENU ********\n\nWhat would you like to do?", ctx, client)
+}
+
+func ListGroups(ctx context.Context, client *okta.Client) error {
+	oktaGroups, oktaResponse, err := client.Group.ListGroups(ctx, nil)
+
+	if err != nil {
+		return err
+	}
+
+	if oktaResponse.StatusCode != 200 {
+		fmt.Printf("error in status: %s", oktaResponse.Status)
+	}
+
+	fmt.Printf("\n\n********** OKTA GROUPS:LIST RESPONSE **************\n\nStatus: %s\nGroups:\n", oktaResponse.Status)
+
+	for _, g := range oktaGroups {
+		fmt.Printf("\nID: %s\nName: %s\nDescription: %s\n", g.Id, g.Profile.Name, g.Profile.Description)
+	}
+
+	return nil
 }
 
 func actionSelector(label string, ctx context.Context, client *okta.Client) {
 	var s string
 	r := bufio.NewReader(os.Stdin)
-	validChoice := false
+	exit := false
 	options := `
-	1) create an Okta Group
-	2) list Okta Groups
-	3) delete an Okta Group
+
+	1) create a random Okta Group with name 'Random Group {randomNumber}'
+	2) list all Okta Groups
+	3) delete an Okta Group (choose from list)
+
+	type <exit> to exit the program
+
 	`
-	for !validChoice {
-		fmt.Fprint(os.Stderr, label+"\n\n"+options)
+	makeSelectionStatement := "\n\nPlease enter a valid choice and press <Enter>"
+	wrongChoiceStatement := "\n\nSorry, but you didn't enter a valid choice!"
+
+	for !exit {
+		fmt.Fprint(os.Stderr, label+options+makeSelectionStatement)
 		s, _ = r.ReadString('\n')
 		s = strings.TrimSpace(s)
 		switch s {
 		case "1":
 			createRandomGroup(ctx, client)
-			validChoice = true
 		case "2":
-			listGroups(ctx, client)
-			validChoice = true
+			ListGroups(ctx, client)
 		case "3":
-			deleteGroupSelector(label, ctx, client)
-			validChoice = true
+			deleteGroupSelector(ctx, client)
+		case "exit":
+			exit = true
 		default:
-			fmt.Fprint(os.Stderr, "Sorry, but you didn't enter a valid choice! Your options are:\n"+options)
+			fmt.Fprint(os.Stderr, wrongChoiceStatement)
 			continue
 		}
 	}
-}
-
-func deleteGroupSelector(label string, ctx context.Context, client *okta.Client) {
-	fmt.Printf("To be continued...")
-}
-
-func handleError(err error) {
-	fmt.Printf("Error: %v\n", err)
 }
 
 func createRandomGroup(ctx context.Context, client *okta.Client) {
@@ -91,23 +111,76 @@ func createRandomGroup(ctx context.Context, client *okta.Client) {
 		handleError(err)
 	}
 
-	fmt.Printf("Okta Response Status: %s\nOkta Group:\n%+s", oktaResponse.Status, prettyPrint(oktaGroup.Profile))
+	fmt.Printf("\n\n********** OKTA GROUP:CREATE RESPONSE **************\n\nOkta Response Status: %s\nOkta Group:\n%+s", oktaResponse.Status, prettyPrint(oktaGroup.Profile))
 }
 
-func listGroups(ctx context.Context, client *okta.Client) error {
+func deleteGroupSelector(ctx context.Context, client *okta.Client) {
+	var s string
+	r := bufio.NewReader(os.Stdin)
+	exit := false
 	oktaGroups, oktaResponse, err := client.Group.ListGroups(ctx, nil)
 
 	if err != nil {
-		return err
+		handleError(err)
 	}
 
-	fmt.Printf("Okta List Groups Call Status: %s\nGroups:\n", oktaResponse.Status)
-
-	for _, g := range oktaGroups {
-		fmt.Printf("%s", prettyPrint(g))
+	if oktaResponse.StatusCode != 200 {
+		fmt.Fprint(os.Stderr, "there was an error retrieving groups")
 	}
 
-	return nil
+	groupSelectorMap := map[string]string{}
+	groupsInfo := []string{}
+	for i, g := range oktaGroups {
+		groupSelectorMap[strconv.Itoa(i)] = g.Id
+		groupInfo := fmt.Sprintf(fmt.Sprintf("%d) Name: %s\nID:%s\nDescription:%s", i, g.Profile.Name, g.Id, g.Profile.Description))
+		groupsInfo = append(groupsInfo, groupInfo)
+	}
+
+	makeSelectionStatement := "\n\nWhich group would you like to delete? Make a valid choice and press <Enter>\n\n"
+	groupsInfoDisplay := strings.Join(groupsInfo, "\n\n")
+	exitStatement := "\n\nType <exit> to abandon\n\n"
+	wrongChoiceStatement := "\n\nSorry, but you didn't enter a valid choice! The prompt will be displayed again.\n\n"
+
+	exit = false
+
+	for !exit {
+		fmt.Fprint(os.Stderr, groupsInfoDisplay+makeSelectionStatement+exitStatement)
+		s, _ = r.ReadString('\n')
+		s = strings.TrimSpace(s)
+		if groupId, validChoice := groupSelectorMap[s]; validChoice {
+			confirmationStatement := fmt.Sprintf("\n\nYou've chosen to delete the group with id %s - are you sure? y/n\n", groupId)
+			fmt.Fprint(os.Stderr, confirmationStatement)
+			s, _ = r.ReadString('\n')
+			s = strings.TrimSpace(s)
+			if s == "y" {
+				deleteGroup(groupId, ctx, client)
+			}
+			exit = true
+		} else if s == "exit" {
+			exit = true
+		} else {
+			fmt.Fprint(os.Stderr, wrongChoiceStatement)
+			time.Sleep(2 * time.Second)
+		}
+	}
+}
+
+func deleteGroup(id string, ctx context.Context, client *okta.Client) {
+	oktaResponse, err := client.Group.DeleteGroup(ctx, id)
+
+	if err != nil {
+		handleError(err)
+	}
+
+	if oktaResponse.StatusCode != 204 {
+		fmt.Printf("\n\n********** OKTA GROUP:DELETE RESPONSE **************\n\nerror deleting group with id %s", id)
+	} else {
+		fmt.Printf("\n\n********** OKTA GROUP:DELETE RESPONSE **************\n\ndeleted group with id %s", id)
+	}
+}
+
+func handleError(err error) {
+	fmt.Printf("Error: %v\n", err)
 }
 
 func prettyPrint(v interface{}) string {
