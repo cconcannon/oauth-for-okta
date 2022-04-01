@@ -28,7 +28,7 @@ Okta allows an app to be created as an *API Services* application. Okta requires
 ## Configure an API Services App in the Okta Admin Console
 
 1. configure an API Services application in Okta
-2. configure scopes for access by the app
+2. configure scopes for access by the app (this demo uses `okta.groups.manage`)
 3. configure public/private keys in Okta (in the app settings) or BYO
 4. copy the private key, clientId, and org url for use in the next steps
 
