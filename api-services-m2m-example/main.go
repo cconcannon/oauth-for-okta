@@ -29,7 +29,9 @@ func main() {
 		okta.WithClientId(os.Getenv("CLIENT_ID")),
 		okta.WithScopes(([]string{"okta.groups.manage"})),
 		okta.WithPrivateKey("./secrets/private.pem"),
-		okta.WithCache(false),
+		okta.WithCache(true),
+		okta.WithCacheTtl(1800),
+		okta.WithCacheTti(1800),
 	)
 
 	if err != nil {
